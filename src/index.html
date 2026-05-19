@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>SysMon</title>
+<style>
+:root{
+  --bg1:#0b1020; --bg2:#1a1240; --bg3:#2a0a4a;
+  --fg:#eaf0ff; --muted:#9aa3c7;
+  --c-cpu:#7c5cff; --c-cpu2:#22d3ee;
+  --c-mem:#ff7ab8; --c-mem2:#ffb86b;
+  --c-net-up:#22d3ee; --c-net-dn:#a78bfa;
+  --c-disk:#34d399; --c-disk2:#60a5fa;
+  --glass: rgba(255,255,255,0.06);
+  --stroke: rgba(255,255,255,0.10);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; color:var(--fg);
+  font:13px/1.4 -apple-system, "SF Pro Display", system-ui, sans-serif;
+  background:
+    radial-gradient(1100px 700px at 15% -10%, rgba(124,92,255,.35), transparent 60%),
+    radial-gradient(900px 600px at 110% 10%, rgba(34,211,238,.25), transparent 55%),
+    radial-gradient(800px 600px at 50% 120%, rgba(255,122,184,.22), transparent 60%),
+    linear-gradient(160deg, var(--bg1), var(--bg2) 50%, var(--bg3));
+  overflow:auto;
+  user-select:none; -webkit-user-select:none;
+}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:4px}
+::-webkit-scrollbar-track{background:transparent}
+body::before{
+  content:""; position:fixed; inset:-2px; pointer-events:none;
+  background: repeating-linear-gradient(transparent 0 3px, rgba(255,255,255,.012) 3px 4px);
+  mix-blend-mode:overlay;
+}
+header{
+  display:flex; align-items:center; justify-content:space-between;
+  padding:10px 16px 4px 86px;
+  -webkit-app-region: drag;
+}
+header .title{display:flex; align-items:center; gap:12px}
+header .dot{
+  width:10px;height:10px;border-radius:50%;
+  background:#34d399; box-shadow:0 0 12px #34d399;
+  animation:pulse 1.8s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:.6;transform:scale(.9)}50%{opacity:1;transform:scale(1.15)}}
+header h1{font-size:13px;font-weight:600;letter-spacing:.3px;margin:0}
+header .host{color:var(--muted);font-size:12px}
+
+main{
+  display:grid; gap:8px; padding:4px 12px 12px;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: auto 1fr;
+  height: calc(100% - 40px);
+}
+.card{
+  position:relative; padding:10px 12px; border-radius:14px;
+  background:var(--glass); border:1px solid var(--stroke);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+  box-shadow: 0 10px 40px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
+  overflow:hidden;
+}
+.card::before{
+  content:""; position:absolute; inset:0; pointer-events:none;
+  background: radial-gradient(600px 200px at 0% 0%, rgba(255,255,255,.06), transparent 60%);
+}
+.card h2{
+  margin:0 0 6px; font-size:10px; font-weight:600;
+  text-transform:uppercase; letter-spacing:1.2px; color:var(--muted);
+}
+.value{
+  font-size:22px; font-weight:600; letter-spacing:.2px;
+  font-variant-numeric: tabular-nums;
+  display:flex; align-items:baseline; gap:6px;
+}
+.value .unit{font-size:11px;color:var(--muted);font-weight:500}
+.sub{color:var(--muted); font-size:11px; margin-top:2px}
+
+.ring-wrap{display:flex; align-items:center; gap:10px}
+svg.ring{width:64px;height:64px;flex-shrink:0}
+svg.ring .bg{stroke:rgba(255,255,255,.08)}
+svg.ring .fg{stroke-linecap:round; transition:stroke-dashoffset .4s ease, stroke .4s}
+.ring-label{font-size:18px;font-weight:600}
+
+.cpu-card{grid-column:1/2; grid-row:1/2}
+.cores{
+  display:grid; gap:3px; margin-top:8px;
+  grid-template-columns: repeat(auto-fill, minmax(22px, 1fr));
+}
+.core{
+  position:relative; height:24px; border-radius:5px;
+  background:rgba(255,255,255,.04); overflow:hidden;
+  border:1px solid rgba(255,255,255,.05);
+}
+.core .fill{
+  position:absolute; left:0; right:0; bottom:0;
+  background:linear-gradient(180deg, var(--c-cpu2), var(--c-cpu));
+  transition: height .35s cubic-bezier(.2,.8,.2,1);
+  box-shadow: 0 0 12px rgba(124,92,255,.45) inset;
+}
+.core .lbl{
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-size:9px; color:#fff; font-variant-numeric:tabular-nums;
+  text-shadow:0 1px 2px rgba(0,0,0,.6);
+}
+.net-row .num{font-size:18px !important}
+.hist-card .legend{font-size:10px !important}
+header h1{font-size:13px !important}
+
+.mem-card{grid-column:2/3; grid-row:1/2}
+.disk-card{grid-column:3/4; grid-row:1/2}
+
+.net-card{grid-column:1/3; grid-row:2/3; display:flex; flex-direction:column}
+.hist-card{grid-column:3/4 !important; grid-row:2/3 !important; display:flex; flex-direction:column}
+.net-row{display:flex; gap:30px; align-items:center; margin-top:6px}
+.net-row .num{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums}
+.net-row .lab{color:var(--muted); font-size:11px; letter-spacing:1px; text-transform:uppercase}
+.net-row .up .num{color:var(--c-net-up)}
+.net-row .dn .num{color:var(--c-net-dn)}
+
+.chart{position:relative; flex:1; min-height:0}
+.chart svg{width:100%; height:100%; display:block}
+.chart .grid line{stroke:rgba(255,255,255,.05)}
+
+.hist-card .legend{display:flex;gap:14px;margin-bottom:6px;font-size:11px;color:var(--muted)}
+.hist-card .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:middle}
+
+.net-card .chart{margin-top:8px}
+</style>
+</head>
+<body>
+<header>
+  <div class="title">
+    <span class="dot"></span>
+    <h1>SysMon</h1>
+    <span class="host" id="host">—</span>
+  </div>
+  <div style="display:flex;gap:14px;align-items:center;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums">
+    <span>↑ <span id="uptime">—</span></span>
+    <span id="clock">—</span>
+  </div>
+</header>
+
+<main>
+  <section class="card cpu-card">
+    <h2>Процессор</h2>
+    <div class="ring-wrap">
+      <svg class="ring" viewBox="0 0 100 100">
+        <defs>
+          <linearGradient id="gcpu" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#22d3ee"/>
+            <stop offset="100%" stop-color="#7c5cff"/>
+          </linearGradient>
+        </defs>
+        <circle class="bg" cx="50" cy="50" r="42" fill="none" stroke-width="8"/>
+        <circle id="cpuRing" class="fg" cx="50" cy="50" r="42" fill="none" stroke-width="8"
+                stroke="url(#gcpu)" stroke-dasharray="263.9" stroke-dashoffset="263.9"
+                transform="rotate(-90 50 50)"/>
+        <text id="cpuRingText" x="50" y="55" text-anchor="middle" fill="#fff" font-size="18" font-weight="600">0%</text>
+      </svg>
+      <div>
+        <div class="value"><span id="cpuVal">0.0</span><span class="unit">%</span></div>
+        <div class="sub"><span id="cpuCores">— ядер</span> · load <span id="cpuLoad">—</span></div>
+      </div>
+    </div>
+    <div class="cores" id="cores"></div>
+  </section>
+
+  <section class="card mem-card">
+    <h2>Память</h2>
+    <div class="ring-wrap">
+      <svg class="ring" viewBox="0 0 100 100">
+        <defs>
+          <linearGradient id="gmem" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#ffb86b"/>
+            <stop offset="100%" stop-color="#ff7ab8"/>
+          </linearGradient>
+        </defs>
+        <circle class="bg" cx="50" cy="50" r="42" fill="none" stroke-width="8"/>
+        <circle id="memRing" class="fg" cx="50" cy="50" r="42" fill="none" stroke-width="8"
+                stroke="url(#gmem)" stroke-dasharray="263.9" stroke-dashoffset="263.9"
+                transform="rotate(-90 50 50)"/>
+        <text id="memRingText" x="50" y="55" text-anchor="middle" fill="#fff" font-size="18" font-weight="600">0%</text>
+      </svg>
+      <div>
+        <div class="value"><span id="memUsed">—</span><span class="unit">/<span id="memTotal">—</span></span></div>
+        <div class="sub">используется приложениями и системой</div>
+      </div>
+    </div>
+    <div class="chart" style="height:90px; margin-top:14px">
+      <svg id="memChart" viewBox="0 0 300 90" preserveAspectRatio="none"></svg>
+    </div>
+  </section>
+
+  <section class="card disk-card">
+    <h2>Диск</h2>
+    <div class="ring-wrap">
+      <svg class="ring" viewBox="0 0 100 100">
+        <defs>
+          <linearGradient id="gdisk" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#60a5fa"/>
+            <stop offset="100%" stop-color="#34d399"/>
+          </linearGradient>
+        </defs>
+        <circle class="bg" cx="50" cy="50" r="42" fill="none" stroke-width="8"/>
+        <circle id="diskRing" class="fg" cx="50" cy="50" r="42" fill="none" stroke-width="8"
+                stroke="url(#gdisk)" stroke-dasharray="263.9" stroke-dashoffset="263.9"
+                transform="rotate(-90 50 50)"/>
+        <text id="diskRingText" x="50" y="55" text-anchor="middle" fill="#fff" font-size="18" font-weight="600">0%</text>
+      </svg>
+      <div>
+        <div class="value"><span id="diskUsed">—</span><span class="unit">/<span id="diskTotal">—</span></span></div>
+        <div class="sub">том «/»</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card net-card">
+    <h2>Сеть</h2>
+    <div class="net-row">
+      <div class="up"><div class="lab">↑ Отдача</div><div class="num"><span id="netUp">0</span> <span style="font-size:13px;color:var(--muted)">/s</span></div></div>
+      <div class="dn"><div class="lab">↓ Приём</div><div class="num"><span id="netDown">0</span> <span style="font-size:13px;color:var(--muted)">/s</span></div></div>
+      <div style="margin-left:auto; text-align:right">
+        <div class="lab">всего</div>
+        <div class="sub">↑ <span id="netSent">—</span> · ↓ <span id="netRecv">—</span></div>
+      </div>
+    </div>
+    <div class="chart">
+      <svg id="netChart" viewBox="0 0 600 200" preserveAspectRatio="none"></svg>
+    </div>
+  </section>
+
+  <section class="card hist-card">
+    <h2>CPU · история</h2>
+    <div class="legend">
+      <span><i style="background:linear-gradient(135deg,#22d3ee,#7c5cff)"></i>Загрузка %</span>
+      <span><i style="background:linear-gradient(135deg,#ffb86b,#ff7ab8)"></i>Память %</span>
+    </div>
+    <div class="chart">
+      <svg id="cpuChart" viewBox="0 0 600 300" preserveAspectRatio="none"></svg>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const RING_C = 2 * Math.PI * 42;
+
+function fmtBytes(b){
+  const u = ['B','KB','MB','GB','TB']; let v = b, i = 0;
+  while(v >= 1024 && i < u.length-1){v/=1024;i++;}
+  return (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + ' ' + u[i];
+}
+function fmtRate(b){
+  const u = ['B','KB','MB','GB']; let v = b, i = 0;
+  while(v >= 1024 && i < u.length-1){v/=1024;i++;}
+  return (v >= 100 ? v.toFixed(0) : v.toFixed(1)) + ' ' + u[i];
+}
+function fmtUptime(s){
+  s = Math.floor(s);
+  const d = Math.floor(s/86400); s%=86400;
+  const h = Math.floor(s/3600); s%=3600;
+  const m = Math.floor(s/60);
+  const parts = [];
+  if(d) parts.push(d+'д');
+  parts.push(h+'ч'); parts.push(m+'м');
+  return parts.join(' ');
+}
+
+function setRing(id, pct){
+  const c = $(id);
+  const off = RING_C * (1 - Math.min(100, Math.max(0, pct))/100);
+  c.setAttribute('stroke-dashoffset', off);
+}
+
+let coresBuilt = 0;
+function buildCores(n){
+  if(coresBuilt === n) return;
+  const wrap = $('cores');
+  wrap.innerHTML = '';
+  for(let i=0;i<n;i++){
+    const d = document.createElement('div');
+    d.className = 'core';
+    d.innerHTML = `<div class="fill" style="height:0%"></div><div class="lbl">${i+1}</div>`;
+    wrap.appendChild(d);
+  }
+  coresBuilt = n;
+}
+
+const HIST = 120;
+const cpuHist = []; const memHist = []; const upHist = []; const dnHist = [];
+
+function pushHist(arr, v){
+  arr.push(v);
+  if(arr.length > HIST) arr.shift();
+}
+
+function pathFor(arr, w, h, max){
+  if(arr.length < 2) return '';
+  const step = w / (HIST - 1);
+  let d = '';
+  for(let i=0;i<arr.length;i++){
+    const x = i * step;
+    const y = h - (arr[i] / max) * h;
+    d += (i===0?'M':'L') + x.toFixed(1) + ',' + y.toFixed(1);
+  }
+  return d;
+}
+function areaFor(arr, w, h, max){
+  if(arr.length < 2) return '';
+  const step = w / (HIST - 1);
+  let d = '';
+  for(let i=0;i<arr.length;i++){
+    const x = i * step;
+    const y = h - (arr[i] / max) * h;
+    d += (i===0?'M':'L') + x.toFixed(1) + ',' + y.toFixed(1);
+  }
+  d += ` L ${w},${h} L 0,${h} Z`;
+  return d;
+}
+
+function renderCpuChart(){
+  const w = 600, h = 300;
+  const svg = $('cpuChart');
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="cpuArea" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#7c5cff" stop-opacity=".55"/>
+        <stop offset="100%" stop-color="#7c5cff" stop-opacity="0"/>
+      </linearGradient>
+      <linearGradient id="memArea" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#ff7ab8" stop-opacity=".4"/>
+        <stop offset="100%" stop-color="#ff7ab8" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <g class="grid">
+      <line x1="0" y1="${h*0.25}" x2="${w}" y2="${h*0.25}"/>
+      <line x1="0" y1="${h*0.5}" x2="${w}" y2="${h*0.5}"/>
+      <line x1="0" y1="${h*0.75}" x2="${w}" y2="${h*0.75}"/>
+    </g>
+    <path d="${areaFor(memHist, w, h, 100)}" fill="url(#memArea)"/>
+    <path d="${pathFor(memHist, w, h, 100)}" fill="none" stroke="#ff7ab8" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="${areaFor(cpuHist, w, h, 100)}" fill="url(#cpuArea)"/>
+    <path d="${pathFor(cpuHist, w, h, 100)}" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linejoin="round"/>
+  `;
+}
+
+function renderNetChart(){
+  const w = 600, h = 200;
+  const svg = $('netChart');
+  const maxV = Math.max(1024, ...upHist, ...dnHist) * 1.15;
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="upArea" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#22d3ee" stop-opacity=".55"/>
+        <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+      </linearGradient>
+      <linearGradient id="dnArea" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#a78bfa" stop-opacity=".55"/>
+        <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <g class="grid">
+      <line x1="0" y1="${h*0.25}" x2="${w}" y2="${h*0.25}"/>
+      <line x1="0" y1="${h*0.5}" x2="${w}" y2="${h*0.5}"/>
+      <line x1="0" y1="${h*0.75}" x2="${w}" y2="${h*0.75}"/>
+    </g>
+    <path d="${areaFor(dnHist, w, h, maxV)}" fill="url(#dnArea)"/>
+    <path d="${pathFor(dnHist, w, h, maxV)}" fill="none" stroke="#a78bfa" stroke-width="1.6"/>
+    <path d="${areaFor(upHist, w, h, maxV)}" fill="url(#upArea)"/>
+    <path d="${pathFor(upHist, w, h, maxV)}" fill="none" stroke="#22d3ee" stroke-width="1.6"/>
+  `;
+}
+function renderMemChart(){
+  const w = 300, h = 90;
+  const svg = $('memChart');
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="memArea2" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#ff7ab8" stop-opacity=".55"/>
+        <stop offset="100%" stop-color="#ff7ab8" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <path d="${areaFor(memHist, w, h, 100)}" fill="url(#memArea2)"/>
+    <path d="${pathFor(memHist, w, h, 100)}" fill="none" stroke="#ffb86b" stroke-width="1.6"/>
+  `;
+}
+
+function tickClock(){
+  const t = new Date();
+  $('clock').textContent = t.toLocaleTimeString('ru-RU');
+}
+setInterval(tickClock, 1000); tickClock();
+
+window.pushStats = function(d){
+  $('host').textContent = d.host || '';
+
+  const cpu = d.cpu;
+  $('cpuVal').textContent = cpu.avg.toFixed(1);
+  $('cpuCores').textContent = cpu.cores + ' ядер';
+  $('cpuLoad').textContent = cpu.load.map(x=>x.toFixed(2)).join(' / ');
+  setRing('cpuRing', cpu.avg);
+  $('cpuRingText').textContent = Math.round(cpu.avg) + '%';
+
+  buildCores(cpu.cores);
+  const items = document.querySelectorAll('#cores .core');
+  for(let i=0;i<cpu.perCore.length && i<items.length;i++){
+    const f = items[i].querySelector('.fill');
+    f.style.height = Math.max(2, Math.min(100, cpu.perCore[i])) + '%';
+  }
+
+  const m = d.mem;
+  $('memUsed').textContent = fmtBytes(m.used);
+  $('memTotal').textContent = fmtBytes(m.total);
+  setRing('memRing', m.percent);
+  $('memRingText').textContent = Math.round(m.percent) + '%';
+
+  const dk = d.disk;
+  $('diskUsed').textContent = fmtBytes(dk.used);
+  $('diskTotal').textContent = fmtBytes(dk.total);
+  setRing('diskRing', dk.percent);
+  $('diskRingText').textContent = Math.round(dk.percent) + '%';
+
+  const n = d.net;
+  $('netUp').textContent = fmtRate(n.up);
+  $('netDown').textContent = fmtRate(n.down);
+  $('netSent').textContent = fmtBytes(n.sentTotal);
+  $('netRecv').textContent = fmtBytes(n.recvTotal);
+
+  $('uptime').textContent = fmtUptime(d.uptime);
+
+  pushHist(cpuHist, cpu.avg);
+  pushHist(memHist, m.percent);
+  pushHist(upHist, n.up);
+  pushHist(dnHist, n.down);
+  renderCpuChart(); renderNetChart(); renderMemChart();
+};
+</script>
+</body>
+</html>
