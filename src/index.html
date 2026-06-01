@@ -130,6 +130,41 @@ header h1{font-size:13px !important}
 .hist-card .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:middle}
 
 .net-card .chart{margin-top:8px}
+
+/* кнопка переключения вида */
+.viewbtn{
+  -webkit-app-region:no-drag;
+  cursor:pointer; border:1px solid var(--stroke);
+  background:rgba(255,255,255,.06); color:var(--fg);
+  font-size:11px; padding:4px 11px; border-radius:8px;
+  transition:background .2s, transform .08s;
+}
+.viewbtn:hover{background:rgba(255,255,255,.13)}
+.viewbtn:active{transform:scale(.95)}
+
+/* расширенный вид */
+.ext{display:none}
+body.extended .ext{display:flex}
+body.extended main{grid-template-rows:auto 1fr 1fr}
+
+.procs-card{grid-column:1/3; grid-row:3/4; flex-direction:column}
+.metrics-card{grid-column:3/4; grid-row:3/4; flex-direction:column}
+
+.proc-list{display:flex; flex-direction:column; margin-top:2px; flex:1; min-height:0}
+.proc-row{
+  display:grid; grid-template-columns:1fr 56px 56px; gap:8px; align-items:center;
+  font-size:11px; padding:3px 0; border-bottom:1px solid rgba(255,255,255,.04);
+}
+.proc-row.head{color:var(--muted); font-size:9px; text-transform:uppercase; letter-spacing:1px}
+.proc-row .pname{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.proc-row .pcpu{color:var(--c-cpu2); text-align:right; font-variant-numeric:tabular-nums}
+.proc-row .pmem{color:var(--c-mem); text-align:right; font-variant-numeric:tabular-nums}
+
+.mrow{display:flex; justify-content:space-between; align-items:center; font-size:11px;
+  padding:6px 0; border-bottom:1px solid rgba(255,255,255,.05)}
+.mrow:last-child{border-bottom:none}
+.mrow .k{color:var(--muted)}
+.mrow .v{font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
@@ -139,9 +174,10 @@ header h1{font-size:13px !important}
     <h1>SysMon</h1>
     <span class="host" id="host">—</span>
   </div>
-  <div style="display:flex;gap:14px;align-items:center;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums">
+  <div style="display:flex;gap:12px;align-items:center;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums">
     <span>↑ <span id="uptime">—</span></span>
     <span id="clock">—</span>
+    <button class="viewbtn" id="viewToggle" onclick="toggleView()">Расширенный вид</button>
   </div>
 </header>
 
@@ -243,6 +279,23 @@ header h1{font-size:13px !important}
     <div class="chart">
       <svg id="cpuChart" viewBox="0 0 600 300" preserveAspectRatio="none"></svg>
     </div>
+  </section>
+
+  <section class="card ext procs-card">
+    <h2>Топ процессов</h2>
+    <div class="proc-list" id="procList">
+      <div class="proc-row head"><span class="pname">Процесс</span><span class="pcpu">CPU</span><span class="pmem">RAM</span></div>
+    </div>
+  </section>
+
+  <section class="card ext metrics-card">
+    <h2>Детали</h2>
+    <div class="mrow"><span class="k">Load average 1м</span><span class="v" id="load1">—</span></div>
+    <div class="mrow"><span class="k">Load average 5м</span><span class="v" id="load5">—</span></div>
+    <div class="mrow"><span class="k">Load average 15м</span><span class="v" id="load15">—</span></div>
+    <div class="mrow"><span class="k">Swap</span><span class="v" id="swap">—</span></div>
+    <div class="mrow"><span class="k">Память свободно</span><span class="v" id="memFree">—</span></div>
+    <div class="mrow"><span class="k">Диск свободно</span><span class="v" id="diskFree">—</span></div>
   </section>
 </main>
 
@@ -438,7 +491,46 @@ window.pushStats = function(d){
   pushHist(upHist, n.up);
   pushHist(dnHist, n.down);
   renderCpuChart(); renderNetChart(); renderMemChart();
+
+  // --- расширенный вид ---
+  if (document.body.classList.contains('extended')) {
+    if (cpu.load && cpu.load.length >= 3) {
+      $('load1').textContent = cpu.load[0].toFixed(2);
+      $('load5').textContent = cpu.load[1].toFixed(2);
+      $('load15').textContent = cpu.load[2].toFixed(2);
+    }
+    if (m.swapTotal !== undefined) {
+      $('swap').textContent = m.swapTotal > 0
+        ? fmtBytes(m.swapUsed) + ' / ' + fmtBytes(m.swapTotal)
+        : 'не используется';
+    }
+    $('memFree').textContent = fmtBytes(Math.max(0, m.total - m.used));
+    $('diskFree').textContent = fmtBytes(Math.max(0, dk.total - dk.used));
+
+    renderProcs(d.procs || []);
+  }
 };
+
+function renderProcs(procs){
+  const list = $('procList');
+  let html = '<div class="proc-row head"><span class="pname">Процесс</span><span class="pcpu">CPU</span><span class="pmem">RAM</span></div>';
+  for (const p of procs){
+    const name = (p.name || '').replace(/[<>&]/g, '');
+    html += `<div class="proc-row"><span class="pname">${name}</span>`
+          + `<span class="pcpu">${p.cpu.toFixed(1)}%</span>`
+          + `<span class="pmem">${p.mem.toFixed(1)}%</span></div>`;
+  }
+  list.innerHTML = html;
+}
+
+function toggleView(){
+  const ext = document.body.classList.toggle('extended');
+  $('viewToggle').textContent = ext ? 'Компактный вид' : 'Расширенный вид';
+  const size = ext ? {w:760, h:680} : {w:680, h:440};
+  try {
+    window.webkit.messageHandlers.ui.postMessage({action:'resize', w:size.w, h:size.h});
+  } catch(e){}
+}
 </script>
 </body>
 </html>

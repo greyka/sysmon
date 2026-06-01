@@ -73,6 +73,40 @@ func memoryStats() -> (totalBytes: UInt64, usedBytes: UInt64, percent: Double, p
     return (size, used, percent, percent)
 }
 
+func swapStats() -> (total: UInt64, used: UInt64) {
+    var usage = xsw_usage()
+    var size = MemoryLayout<xsw_usage>.size
+    if sysctlbyname("vm.swapusage", &usage, &size, nil, 0) == 0 {
+        return (usage.xsu_total, usage.xsu_used)
+    }
+    return (0, 0)
+}
+
+func topProcesses(limit: Int) -> [[String: Any]] {
+    let p = Process()
+    p.launchPath = "/bin/ps"
+    p.arguments = ["-Aceo", "pid,pcpu,pmem,comm", "-r"]
+    let pipe = Pipe()
+    p.standardOutput = pipe
+    p.standardError = Pipe()
+    do { try p.run() } catch { return [] }
+    let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    p.waitUntilExit()
+    guard let out = String(data: data, encoding: .utf8) else { return [] }
+    var result: [[String: Any]] = []
+    for line in out.split(separator: "\n").dropFirst() {
+        let tokens = line.trimmingCharacters(in: .whitespaces)
+            .split(separator: " ", omittingEmptySubsequences: true)
+        guard tokens.count >= 4 else { continue }
+        let cpu = Double(tokens[1]) ?? 0
+        let mem = Double(tokens[2]) ?? 0
+        let name = tokens[3...].joined(separator: " ")
+        result.append(["name": name, "cpu": cpu, "mem": mem])
+        if result.count >= limit { break }
+    }
+    return result
+}
+
 func diskStats() -> (total: UInt64, used: UInt64, percent: Double) {
     let url = URL(fileURLWithPath: "/")
     if let v = try? url.resourceValues(forKeys: [.volumeTotalCapacityKey, .volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey]) {
@@ -119,6 +153,8 @@ final class Collector {
     private var prevNet: (sent: UInt64, recv: UInt64) = (0, 0)
     private var prevT: TimeInterval = Date().timeIntervalSince1970
     private(set) var last: [String: Any] = [:]
+    private var procCache: [[String: Any]] = []
+    private var tickCount = 0
 
     init() {
         prevCPU = cpuTicks()
@@ -142,6 +178,13 @@ final class Collector {
         let mem = memoryStats()
         let dsk = diskStats()
         let load = loadAverages()
+        let swap = swapStats()
+
+        // Список процессов обновляем раз в 2 секунды (ps дороговат)
+        if tickCount % 2 == 0 {
+            procCache = topProcesses(limit: 6)
+        }
+        tickCount &+= 1
 
         let d: [String: Any] = [
             "ts": now,
@@ -154,8 +197,11 @@ final class Collector {
             "mem": [
                 "total": mem.totalBytes,
                 "used": mem.usedBytes,
-                "percent": mem.percent
+                "percent": mem.percent,
+                "swapTotal": swap.total,
+                "swapUsed": swap.used
             ],
+            "procs": procCache,
             "net": [
                 "up": up,
                 "down": down,
@@ -213,6 +259,7 @@ final class DashboardWindow: NSWindowController, WKScriptMessageHandler {
 
         super.init(window: win)
         ucc.add(self, name: "log")
+        ucc.add(self, name: "ui")
 
         let url = Bundle.main.url(forResource: "index", withExtension: "html")!
         webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
@@ -220,6 +267,19 @@ final class DashboardWindow: NSWindowController, WKScriptMessageHandler {
     required init?(coder: NSCoder) { fatalError() }
 
     func userContentController(_ uc: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "ui",
+           let body = message.body as? [String: Any],
+           body["action"] as? String == "resize",
+           let w = body["w"] as? Double, let h = body["h"] as? Double,
+           let win = window {
+            var f = win.frame
+            let top = f.origin.y + f.size.height   // фиксируем верхний край
+            f.size.width = CGFloat(w)
+            f.size.height = CGFloat(h)
+            f.origin.y = top - CGFloat(h)
+            win.setFrame(f, display: true, animate: true)
+            return
+        }
         NSLog("web: \(message.body)")
     }
 
