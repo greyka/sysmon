@@ -11,6 +11,7 @@
   --c-mem:#ff7ab8; --c-mem2:#ffb86b;
   --c-net-up:#22d3ee; --c-net-dn:#a78bfa;
   --c-disk:#34d399; --c-disk2:#60a5fa;
+  --dot:#34d399;
   --glass: rgba(255,255,255,0.06);
   --stroke: rgba(255,255,255,0.10);
 }
@@ -43,7 +44,7 @@ header{
 header .title{display:flex; align-items:center; gap:12px}
 header .dot{
   width:10px;height:10px;border-radius:50%;
-  background:#34d399; box-shadow:0 0 12px #34d399;
+  background:var(--dot); box-shadow:0 0 12px var(--dot);
   animation:pulse 1.8s ease-in-out infinite;
 }
 @keyframes pulse{0%,100%{opacity:.6;transform:scale(.9)}50%{opacity:1;transform:scale(1.15)}}
@@ -100,7 +101,7 @@ svg.ring .fg{stroke-linecap:round; transition:stroke-dashoffset .4s ease, stroke
   position:absolute; left:0; right:0; bottom:0;
   background:linear-gradient(180deg, var(--c-cpu2), var(--c-cpu));
   transition: height .35s cubic-bezier(.2,.8,.2,1);
-  box-shadow: 0 0 12px rgba(124,92,255,.45) inset;
+  box-shadow: 0 0 12px rgba(255,255,255,.18) inset;
 }
 .core .lbl{
   position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
@@ -165,6 +166,31 @@ body.extended main{grid-template-rows:auto 1fr 1fr}
 .mrow:last-child{border-bottom:none}
 .mrow .k{color:var(--muted)}
 .mrow .v{font-variant-numeric:tabular-nums}
+
+/* выбор темы */
+.theme-picker{position:relative; -webkit-app-region:no-drag}
+.theme-btn{display:flex; align-items:center; gap:6px}
+.theme-btn .sw{width:22px; height:12px; border-radius:4px}
+.theme-menu{
+  position:absolute; right:0; top:30px; z-index:60;
+  display:none; flex-direction:column; gap:2px; padding:6px;
+  background:rgba(18,16,38,.94); border:1px solid var(--stroke);
+  border-radius:12px; min-width:158px;
+  backdrop-filter:blur(22px) saturate(140%);
+  -webkit-backdrop-filter:blur(22px) saturate(140%);
+  box-shadow:0 16px 50px rgba(0,0,0,.55);
+}
+.theme-menu.open{display:flex}
+.theme-item{
+  display:flex; align-items:center; gap:9px; cursor:pointer;
+  padding:6px 8px; border-radius:8px; font-size:12px; color:var(--fg);
+  transition:background .15s;
+}
+.theme-item:hover{background:rgba(255,255,255,.09)}
+.theme-item.active{background:rgba(255,255,255,.12)}
+.theme-item .sw{width:28px; height:15px; border-radius:5px; flex-shrink:0; box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
+.theme-item .check{margin-left:auto; opacity:0; font-size:11px}
+.theme-item.active .check{opacity:1}
 </style>
 </head>
 <body>
@@ -177,6 +203,12 @@ body.extended main{grid-template-rows:auto 1fr 1fr}
   <div style="display:flex;gap:12px;align-items:center;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums">
     <span>↑ <span id="uptime">—</span></span>
     <span id="clock">—</span>
+    <div class="theme-picker">
+      <button class="viewbtn theme-btn" id="themeBtn" onclick="toggleThemeMenu(event)">
+        <span class="sw" id="themeSw"></span><span id="themeName">Аврора</span>
+      </button>
+      <div class="theme-menu" id="themeMenu"></div>
+    </div>
     <button class="viewbtn" id="viewToggle" onclick="toggleView()">Расширенный вид</button>
   </div>
 </header>
@@ -273,8 +305,8 @@ body.extended main{grid-template-rows:auto 1fr 1fr}
   <section class="card hist-card">
     <h2>CPU · история</h2>
     <div class="legend">
-      <span><i style="background:linear-gradient(135deg,#22d3ee,#7c5cff)"></i>Загрузка %</span>
-      <span><i style="background:linear-gradient(135deg,#ffb86b,#ff7ab8)"></i>Память %</span>
+      <span><i id="legCpu" style="background:linear-gradient(135deg,#22d3ee,#7c5cff)"></i>Загрузка %</span>
+      <span><i id="legMem" style="background:linear-gradient(135deg,#ffb86b,#ff7ab8)"></i>Память %</span>
     </div>
     <div class="chart">
       <svg id="cpuChart" viewBox="0 0 600 300" preserveAspectRatio="none"></svg>
@@ -382,12 +414,12 @@ function renderCpuChart(){
   svg.innerHTML = `
     <defs>
       <linearGradient id="cpuArea" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#7c5cff" stop-opacity=".55"/>
-        <stop offset="100%" stop-color="#7c5cff" stop-opacity="0"/>
+        <stop offset="0%" stop-color="${P.cpu}" stop-opacity=".55"/>
+        <stop offset="100%" stop-color="${P.cpu}" stop-opacity="0"/>
       </linearGradient>
       <linearGradient id="memArea" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#ff7ab8" stop-opacity=".4"/>
-        <stop offset="100%" stop-color="#ff7ab8" stop-opacity="0"/>
+        <stop offset="0%" stop-color="${P.mem}" stop-opacity=".4"/>
+        <stop offset="100%" stop-color="${P.mem}" stop-opacity="0"/>
       </linearGradient>
     </defs>
     <g class="grid">
@@ -396,9 +428,9 @@ function renderCpuChart(){
       <line x1="0" y1="${h*0.75}" x2="${w}" y2="${h*0.75}"/>
     </g>
     <path d="${areaFor(memHist, w, h, 100)}" fill="url(#memArea)"/>
-    <path d="${pathFor(memHist, w, h, 100)}" fill="none" stroke="#ff7ab8" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="${pathFor(memHist, w, h, 100)}" fill="none" stroke="${P.mem}" stroke-width="1.5" stroke-linejoin="round"/>
     <path d="${areaFor(cpuHist, w, h, 100)}" fill="url(#cpuArea)"/>
-    <path d="${pathFor(cpuHist, w, h, 100)}" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linejoin="round"/>
+    <path d="${pathFor(cpuHist, w, h, 100)}" fill="none" stroke="${P.cpu2}" stroke-width="2" stroke-linejoin="round"/>
   `;
 }
 
@@ -409,12 +441,12 @@ function renderNetChart(){
   svg.innerHTML = `
     <defs>
       <linearGradient id="upArea" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#22d3ee" stop-opacity=".55"/>
-        <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+        <stop offset="0%" stop-color="${P.netUp}" stop-opacity=".55"/>
+        <stop offset="100%" stop-color="${P.netUp}" stop-opacity="0"/>
       </linearGradient>
       <linearGradient id="dnArea" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#a78bfa" stop-opacity=".55"/>
-        <stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>
+        <stop offset="0%" stop-color="${P.netDn}" stop-opacity=".55"/>
+        <stop offset="100%" stop-color="${P.netDn}" stop-opacity="0"/>
       </linearGradient>
     </defs>
     <g class="grid">
@@ -423,9 +455,9 @@ function renderNetChart(){
       <line x1="0" y1="${h*0.75}" x2="${w}" y2="${h*0.75}"/>
     </g>
     <path d="${areaFor(dnHist, w, h, maxV)}" fill="url(#dnArea)"/>
-    <path d="${pathFor(dnHist, w, h, maxV)}" fill="none" stroke="#a78bfa" stroke-width="1.6"/>
+    <path d="${pathFor(dnHist, w, h, maxV)}" fill="none" stroke="${P.netDn}" stroke-width="1.6"/>
     <path d="${areaFor(upHist, w, h, maxV)}" fill="url(#upArea)"/>
-    <path d="${pathFor(upHist, w, h, maxV)}" fill="none" stroke="#22d3ee" stroke-width="1.6"/>
+    <path d="${pathFor(upHist, w, h, maxV)}" fill="none" stroke="${P.netUp}" stroke-width="1.6"/>
   `;
 }
 function renderMemChart(){
@@ -434,12 +466,12 @@ function renderMemChart(){
   svg.innerHTML = `
     <defs>
       <linearGradient id="memArea2" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#ff7ab8" stop-opacity=".55"/>
-        <stop offset="100%" stop-color="#ff7ab8" stop-opacity="0"/>
+        <stop offset="0%" stop-color="${P.mem}" stop-opacity=".55"/>
+        <stop offset="100%" stop-color="${P.mem}" stop-opacity="0"/>
       </linearGradient>
     </defs>
     <path d="${areaFor(memHist, w, h, 100)}" fill="url(#memArea2)"/>
-    <path d="${pathFor(memHist, w, h, 100)}" fill="none" stroke="#ffb86b" stroke-width="1.6"/>
+    <path d="${pathFor(memHist, w, h, 100)}" fill="none" stroke="${P.mem2}" stroke-width="1.6"/>
   `;
 }
 
@@ -448,6 +480,79 @@ function tickClock(){
   $('clock').textContent = t.toLocaleTimeString('ru-RU');
 }
 setInterval(tickClock, 1000); tickClock();
+
+/* ===== Темы ===== */
+const THEMES = {
+  aurora: { name:'Аврора',  bg:['#0b1020','#1a1240','#2a0a4a'], glow:['124,92,255','34,211,238','255,122,184'],
+            cpu:'#7c5cff', cpu2:'#22d3ee', mem:'#ff7ab8', mem2:'#ffb86b', netUp:'#22d3ee', netDn:'#a78bfa', disk:'#34d399', disk2:'#60a5fa', dot:'#34d399' },
+  sunset: { name:'Закат',   bg:['#1a0e10','#2a1216','#3a0f1e'], glow:['255,138,76','255,90,120','255,196,84'],
+            cpu:'#ff8a4c', cpu2:'#ffc454', mem:'#ff5a78', mem2:'#ff8a4c', netUp:'#ffc454', netDn:'#ff7ab8', disk:'#ffa94d', disk2:'#ff6b6b', dot:'#ffa94d' },
+  ocean:  { name:'Океан',   bg:['#04121f','#07223a','#0a2f4a'], glow:['56,189,248','34,211,238','45,212,191'],
+            cpu:'#38bdf8', cpu2:'#2dd4bf', mem:'#22d3ee', mem2:'#38bdf8', netUp:'#2dd4bf', netDn:'#60a5fa', disk:'#34d399', disk2:'#38bdf8', dot:'#2dd4bf' },
+  forest: { name:'Лес',     bg:['#0a160e','#0e2417','#0c2e1a'], glow:['52,211,153','132,204,22','45,212,191'],
+            cpu:'#34d399', cpu2:'#a3e635', mem:'#84cc16', mem2:'#fcd34d', netUp:'#2dd4bf', netDn:'#34d399', disk:'#22c55e', disk2:'#a3e635', dot:'#a3e635' },
+  neon:   { name:'Неон',    bg:['#0a0410','#14001f','#1a0020'], glow:['217,70,239','56,189,248','244,114,182'],
+            cpu:'#d946ef', cpu2:'#38bdf8', mem:'#f472b6', mem2:'#c084fc', netUp:'#38bdf8', netDn:'#d946ef', disk:'#22d3ee', disk2:'#d946ef', dot:'#d946ef' },
+  graphite:{name:'Графит',  bg:['#0c0c0e','#141417','#1a1a1f'], glow:['148,163,184','100,116,139','203,213,225'],
+            cpu:'#cbd5e1', cpu2:'#94a3b8', mem:'#94a3b8', mem2:'#cbd5e1', netUp:'#cbd5e1', netDn:'#64748b', disk:'#94a3b8', disk2:'#e2e8f0', dot:'#94a3b8' },
+};
+const THEME_ORDER = ['aurora','sunset','ocean','forest','neon','graphite'];
+let currentTheme = 'aurora';
+let P = THEMES.aurora;
+
+function buildBg(t){
+  const g = t.glow;
+  return `radial-gradient(1100px 700px at 15% -10%, rgba(${g[0]},.35), transparent 60%),`
+       + `radial-gradient(900px 600px at 110% 10%, rgba(${g[1]},.25), transparent 55%),`
+       + `radial-gradient(800px 600px at 50% 120%, rgba(${g[2]},.22), transparent 60%),`
+       + `linear-gradient(160deg, ${t.bg[0]}, ${t.bg[1]} 50%, ${t.bg[2]})`;
+}
+function setGrad(id, c0, c1){
+  const g = document.getElementById(id); if(!g) return;
+  const s = g.querySelectorAll('stop');
+  if(s[0]) s[0].setAttribute('stop-color', c0);
+  if(s[1]) s[1].setAttribute('stop-color', c1);
+}
+function applyTheme(key){
+  const t = THEMES[key]; if(!t) return;
+  currentTheme = key; P = t;
+  document.body.style.background = buildBg(t);
+  const r = document.documentElement.style;
+  r.setProperty('--c-cpu', t.cpu);   r.setProperty('--c-cpu2', t.cpu2);
+  r.setProperty('--c-mem', t.mem);   r.setProperty('--c-mem2', t.mem2);
+  r.setProperty('--c-net-up', t.netUp); r.setProperty('--c-net-dn', t.netDn);
+  r.setProperty('--c-disk', t.disk); r.setProperty('--c-disk2', t.disk2);
+  r.setProperty('--dot', t.dot);
+  setGrad('gcpu', t.cpu2, t.cpu);
+  setGrad('gmem', t.mem2, t.mem);
+  setGrad('gdisk', t.disk2, t.disk);
+  const lc=$('legCpu'), lm=$('legMem');
+  if(lc) lc.style.background = `linear-gradient(135deg,${t.cpu2},${t.cpu})`;
+  if(lm) lm.style.background = `linear-gradient(135deg,${t.mem2},${t.mem})`;
+  $('themeName').textContent = t.name;
+  $('themeSw').style.background = `linear-gradient(135deg,${t.cpu2},${t.cpu} 50%,${t.mem})`;
+  renderCpuChart(); renderNetChart(); renderMemChart();
+  try{ localStorage.setItem('sysmon-theme', key); }catch(e){}
+  populateThemeMenu();
+}
+function populateThemeMenu(){
+  const menu = $('themeMenu'); menu.innerHTML = '';
+  for(const key of THEME_ORDER){
+    const t = THEMES[key];
+    const item = document.createElement('div');
+    item.className = 'theme-item' + (key===currentTheme ? ' active' : '');
+    item.innerHTML = `<span class="sw" style="background:linear-gradient(135deg,${t.cpu2},${t.cpu} 50%,${t.mem})"></span>`
+                   + `<span>${t.name}</span><span class="check">✓</span>`;
+    item.onclick = (e) => { e.stopPropagation(); applyTheme(key); closeThemeMenu(); };
+    menu.appendChild(item);
+  }
+}
+function toggleThemeMenu(e){
+  e.stopPropagation();
+  $('themeMenu').classList.toggle('open');
+}
+function closeThemeMenu(){ $('themeMenu').classList.remove('open'); }
+document.addEventListener('click', closeThemeMenu);
 
 window.pushStats = function(d){
   $('host').textContent = d.host || '';
@@ -531,6 +636,13 @@ function toggleView(){
     window.webkit.messageHandlers.ui.postMessage({action:'resize', w:size.w, h:size.h});
   } catch(e){}
 }
+
+/* инициализация темы */
+(function initTheme(){
+  let saved = null;
+  try{ saved = localStorage.getItem('sysmon-theme'); }catch(e){}
+  applyTheme(saved && THEMES[saved] ? saved : 'aurora');
+})();
 </script>
 </body>
 </html>
